@@ -32,7 +32,7 @@
   --with-spartan-storage-engine
 
   Once this is done, MySQL will let you create tables with:<br>
-  CREATE TABLE <table name> (...) ENGINE=EXAMPLE;
+  CREATE TABLE <table name> (...) ENGINE=SPARTAN;
 
   The spartan storage engine is set up to use table locks. It
   implements an spartan "SHARE" that is inserted into a hash by table
@@ -44,7 +44,7 @@
   of this file.
 
   @note
-  When you create an EXAMPLE table, the MySQL Server creates a table .frm
+  When you create an SPARTAN table, the MySQL Server creates a table .frm
   (format) file in the database directory, using the table name as the file
   name as is customary with MySQL. No other files are created. To get an idea
   of what occurs, here is an spartan select that would do a scan of an entire
@@ -79,7 +79,7 @@
   ha_spartan::open() would also have been necessary. Calls to
   ha_spartan::extra() are hints as to what will be occuring to the request.
 
-  A Longer Example can be found called the "Skeleton Engine" which can be 
+  A Longer Spartan can be found called the "Skeleton Engine" which can be 
   found on TangentOrg. It has both an engine and a full build environment
   for building a pluggable storage engine.
 
@@ -105,11 +105,11 @@ static bool spartan_is_supported_system_table(const char *db,
                                       const char *table_name,
                                       bool is_sql_layer_system_table);
 #ifdef HAVE_PSI_INTERFACE
-static PSI_mutex_key ex_key_mutex_Example_share_mutex;
+static PSI_mutex_key ex_key_mutex_Spartan_share_mutex;
 
 static PSI_mutex_info all_spartan_mutexes[]=
 {
-  { &ex_key_mutex_Example_share_mutex, "Example_share::mutex", 0}
+  { &ex_key_mutex_Spartan_share_mutex, "Spartan_share::mutex", 0}
 };
 
 static void init_spartan_psi_keys()
@@ -122,10 +122,10 @@ static void init_spartan_psi_keys()
 }
 #endif
 
-Example_share::Example_share()
+Spartan_share::Spartan_share()
 {
   thr_lock_init(&lock);
-  mysql_mutex_init(ex_key_mutex_Example_share_mutex,
+  mysql_mutex_init(ex_key_mutex_Spartan_share_mutex,
                    &mutex, MY_MUTEX_INIT_FAST);
 }
 
@@ -151,22 +151,22 @@ static int spartan_init_func(void *p)
 
 /**
   @brief
-  Example of simple lock controls. The "share" it creates is a
+  Spartan of simple lock controls. The "share" it creates is a
   structure we will pass to each spartan handler. Do you have to have
   one of these? Well, you have pieces that are used for locking, and
   they are needed to function.
 */
 
-Example_share *ha_spartan::get_share()
+Spartan_share *ha_spartan::get_share()
 {
-  Example_share *tmp_share;
+  Spartan_share *tmp_share;
 
   DBUG_ENTER("ha_spartan::get_share()");
 
   lock_shared_ha_data();
-  if (!(tmp_share= static_cast<Example_share*>(get_ha_share_ptr())))
+  if (!(tmp_share= static_cast<Spartan_share*>(get_ha_share_ptr())))
   {
-    tmp_share= new Example_share;
+    tmp_share= new Spartan_share;
     if (!tmp_share)
       goto err;
 
@@ -334,7 +334,7 @@ int ha_spartan::close(void)
   information to extract the data from the native byte array type.
 
   @details
-  Example of this would be:
+  Spartan of this would be:
   @code
   for (Field **field=table->field ; *field ; field++)
   {
@@ -361,7 +361,7 @@ int ha_spartan::write_row(uchar *buf)
 {
   DBUG_ENTER("ha_spartan::write_row");
   /*
-    Example of a successful write_row. We don't store the data
+    Spartan of a successful write_row. We don't store the data
     anywhere; they are thrown away. A real implementation will
     probably need to do something with 'buf'. We report a success
     here, to pretend that the insert was successful.
@@ -1004,9 +1004,9 @@ mysql_declare_plugin(spartan)
 {
   MYSQL_STORAGE_ENGINE_PLUGIN,
   &spartan_storage_engine,
-  "EXAMPLE",
+  "SPARTAN",
   "Brian Aker, MySQL AB",
-  "Example storage engine",
+  "Spartan storage engine",
   PLUGIN_LICENSE_GPL,
   spartan_init_func,                            /* Plugin Init */
   NULL,                                         /* Plugin Deinit */

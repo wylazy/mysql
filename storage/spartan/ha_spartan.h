@@ -37,15 +37,15 @@
 #include "my_base.h"                     /* ha_rows */
 
 /** @brief
-  Example_share is a class that will be shared among all open handlers.
+  Spartan_share is a class that will be shared among all open handlers.
   This spartan implements the minimum of what you will probably need.
 */
-class Example_share : public Handler_share {
+class Spartan_share : public Handler_share {
 public:
   mysql_mutex_t mutex;
   THR_LOCK lock;
-  Example_share();
-  ~Example_share()
+  Spartan_share();
+  ~Spartan_share()
   {
     thr_lock_delete(&lock);
     mysql_mutex_destroy(&mutex);
@@ -58,8 +58,8 @@ public:
 class ha_spartan: public handler
 {
   THR_LOCK_DATA lock;      ///< MySQL lock
-  Example_share *share;    ///< Shared lock info
-  Example_share *get_share(); ///< Get the share
+  Spartan_share *share;    ///< Shared lock info
+  Spartan_share *get_share(); ///< Get the share
 
 public:
   ha_spartan(handlerton *hton, TABLE_SHARE *table_arg);
@@ -70,7 +70,7 @@ public:
   /** @brief
     The name that will be used for display purposes.
    */
-  const char *table_type() const { return "EXAMPLE"; }
+  const char *table_type() const { return "SPARTAN"; }
 
   /** @brief
     The name of the index type that will be used for display.
