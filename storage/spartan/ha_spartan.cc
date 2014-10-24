@@ -1,17 +1,17 @@
 /* Copyright (c) 2004, 2013, Oracle and/or its affiliates. All rights reserved.
 
-  This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; version 2 of the License.
 
-  This program is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
 
-  You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software
-  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
   @file ha_spartan.cc
@@ -48,43 +48,43 @@
   (format) file in the database directory, using the table name as the file
   name as is customary with MySQL. No other files are created. To get an idea
   of what occurs, here is an spartan select that would do a scan of an entire
-  table:
+table:
 
-  @code
-  ha_spartan::store_lock
-  ha_spartan::external_lock
-  ha_spartan::info
-  ha_spartan::rnd_init
-  ha_spartan::extra
-  ENUM HA_EXTRA_CACHE        Cache record in HA_rrnd()
-  ha_spartan::rnd_next
-  ha_spartan::rnd_next
-  ha_spartan::rnd_next
-  ha_spartan::rnd_next
-  ha_spartan::rnd_next
-  ha_spartan::rnd_next
-  ha_spartan::rnd_next
-  ha_spartan::rnd_next
-  ha_spartan::rnd_next
-  ha_spartan::extra
-  ENUM HA_EXTRA_NO_CACHE     End caching of records (def)
-  ha_spartan::external_lock
-  ha_spartan::extra
-  ENUM HA_EXTRA_RESET        Reset database to after open
-  @endcode
+@code
+ha_spartan::store_lock
+ha_spartan::external_lock
+ha_spartan::info
+ha_spartan::rnd_init
+ha_spartan::extra
+ENUM HA_EXTRA_CACHE        Cache record in HA_rrnd()
+ha_spartan::rnd_next
+ha_spartan::rnd_next
+ha_spartan::rnd_next
+ha_spartan::rnd_next
+ha_spartan::rnd_next
+ha_spartan::rnd_next
+ha_spartan::rnd_next
+ha_spartan::rnd_next
+ha_spartan::rnd_next
+ha_spartan::extra
+ENUM HA_EXTRA_NO_CACHE     End caching of records (def)
+ha_spartan::external_lock
+ha_spartan::extra
+ENUM HA_EXTRA_RESET        Reset database to after open
+@endcode
 
-  Here you see that the spartan storage engine has 9 rows called before
-  rnd_next signals that it has reached the end of its data. Also note that
-  the table in question was already opened; had it not been open, a call to
-  ha_spartan::open() would also have been necessary. Calls to
-  ha_spartan::extra() are hints as to what will be occuring to the request.
+Here you see that the spartan storage engine has 9 rows called before
+rnd_next signals that it has reached the end of its data. Also note that
+the table in question was already opened; had it not been open, a call to
+ha_spartan::open() would also have been necessary. Calls to
+ha_spartan::extra() are hints as to what will be occuring to the request.
 
-  A Longer Spartan can be found called the "Skeleton Engine" which can be 
-  found on TangentOrg. It has both an engine and a full build environment
-  for building a pluggable storage engine.
+A Longer Spartan can be found called the "Skeleton Engine" which can be 
+found on TangentOrg. It has both an engine and a full build environment
+for building a pluggable storage engine.
 
-  Happy coding!<br>
-    -Brian
+Happy coding!<br>
+-Brian
 */
 
 #include "sql_priv.h"
@@ -93,23 +93,34 @@
 #include "probes_mysql.h"
 #include "sql_plugin.h"
 
+
+#define SPD_EXT ".spd"               // The data file
+
 static handler *spartan_create_handler(handlerton *hton,
-                                       TABLE_SHARE *table, 
-                                       MEM_ROOT *mem_root);
+    TABLE_SHARE *table, 
+    MEM_ROOT *mem_root);
 
 handlerton *spartan_hton;
 
 /* Interface to mysqld, to check system tables supported by SE */
 static const char* spartan_system_database();
 static bool spartan_is_supported_system_table(const char *db,
-                                      const char *table_name,
-                                      bool is_sql_layer_system_table);
+    const char *table_name,
+    bool is_sql_layer_system_table);
+
 #ifdef HAVE_PSI_INTERFACE
 static PSI_mutex_key ex_key_mutex_Spartan_share_mutex;
 
 static PSI_mutex_info all_spartan_mutexes[]=
 {
   { &ex_key_mutex_Spartan_share_mutex, "Spartan_share::mutex", 0}
+};
+
+static PSI_file_key spd_file_data;
+
+static PSI_file_info all_tina_files[]=
+{
+  { &spd_file_data, "data", 0},
 };
 
 static void init_spartan_psi_keys()
@@ -119,6 +130,9 @@ static void init_spartan_psi_keys()
 
   count= array_elements(all_spartan_mutexes);
   mysql_mutex_register(category, all_spartan_mutexes, count);
+
+  count= array_elements(all_tina_files);
+  mysql_file_register(category, all_tina_files, count);
 }
 #endif
 
@@ -126,7 +140,7 @@ Spartan_share::Spartan_share()
 {
   thr_lock_init(&lock);
   mysql_mutex_init(ex_key_mutex_Spartan_share_mutex,
-                   &mutex, MY_MUTEX_INIT_FAST);
+      &mutex, MY_MUTEX_INIT_FAST);
 }
 
 
@@ -141,7 +155,7 @@ static int spartan_init_func(void *p)
   spartan_hton= (handlerton *)p;
   spartan_hton->state=                     SHOW_OPTION_YES;
   spartan_hton->create=                    spartan_create_handler;
-  spartan_hton->flags=                     HTON_CAN_RECREATE;
+  spartan_hton->flags= (HTON_CAN_RECREATE | HTON_SUPPORT_LOG_TABLES | HTON_NO_PARTITION);
   spartan_hton->system_database=   spartan_system_database;
   spartan_hton->is_supported_system_table= spartan_is_supported_system_table;
 
@@ -155,9 +169,9 @@ static int spartan_init_func(void *p)
   structure we will pass to each spartan handler. Do you have to have
   one of these? Well, you have pieces that are used for locking, and
   they are needed to function.
-*/
+  */
 
-Spartan_share *ha_spartan::get_share()
+Spartan_share *ha_spartan::get_share(const char *table_name, TABLE *table)
 {
   Spartan_share *tmp_share;
 
@@ -171,7 +185,11 @@ Spartan_share *ha_spartan::get_share()
       goto err;
 
     set_ha_share_ptr(static_cast<Handler_share*>(tmp_share));
+    strmov(tmp_share->table_name, table_name);
+    fn_format(tmp_share->data_file_name, table_name, "", SPD_EXT,
+        MY_REPLACE_EXT|MY_UNPACK_FILENAME);
   }
+
 err:
   unlock_shared_ha_data();
   DBUG_RETURN(tmp_share);
@@ -179,14 +197,14 @@ err:
 
 
 static handler* spartan_create_handler(handlerton *hton,
-                                       TABLE_SHARE *table, 
-                                       MEM_ROOT *mem_root)
+    TABLE_SHARE *table, 
+    MEM_ROOT *mem_root)
 {
   return new (mem_root) ha_spartan(hton, table);
 }
 
-ha_spartan::ha_spartan(handlerton *hton, TABLE_SHARE *table_arg)
-  :handler(hton, table_arg)
+  ha_spartan::ha_spartan(handlerton *hton, TABLE_SHARE *table_arg)
+:handler(hton, table_arg)
 {}
 
 
@@ -206,9 +224,10 @@ ha_spartan::ha_spartan(handlerton *hton, TABLE_SHARE *table_arg)
   @see
   rename_table method in handler.cc and
   delete_table method in handler.cc
-*/
+  */
 
 static const char *ha_spartan_exts[] = {
+  SPD_EXT,
   NullS
 };
 
@@ -218,10 +237,10 @@ const char **ha_spartan::bas_ext() const
 }
 
 /*
-  Following handler function provides access to
-  system database specific to SE. This interface
-  is optional, so every SE need not implement it.
-*/
+   Following handler function provides access to
+   system database specific to SE. This interface
+   is optional, so every SE need not implement it.
+   */
 const char* ha_spartan_system_database= NULL;
 const char* spartan_system_database()
 {
@@ -229,14 +248,14 @@ const char* spartan_system_database()
 }
 
 /*
-  List of all system tables specific to the SE.
-  Array element would look like below,
-     { "<database_name>", "<system table name>" },
-  The last element MUST be,
-     { (const char*)NULL, (const char*)NULL }
+   List of all system tables specific to the SE.
+   Array element would look like below,
+   { "<database_name>", "<system table name>" },
+   The last element MUST be,
+   { (const char*)NULL, (const char*)NULL }
 
-  This array is optional, so every SE need not implement it.
-*/
+   This array is optional, so every SE need not implement it.
+   */
 static st_system_tablename ha_spartan_system_tables[]= {
   {(const char*)NULL, (const char*)NULL}
 };
@@ -247,15 +266,15 @@ static st_system_tablename ha_spartan_system_tables[]= {
   @param db                         Database name to check.
   @param table_name                 table name to check.
   @param is_sql_layer_system_table  if the supplied db.table_name is a SQL
-                                    layer system table.
+  layer system table.
 
   @return
-    @retval TRUE   Given db.table_name is supported system table.
-    @retval FALSE  Given db.table_name is not a supported system table.
-*/
+  @retval TRUE   Given db.table_name is supported system table.
+  @retval FALSE  Given db.table_name is not a supported system table.
+  */
 static bool spartan_is_supported_system_table(const char *db,
-                                              const char *table_name,
-                                              bool is_sql_layer_system_table)
+    const char *table_name,
+    bool is_sql_layer_system_table)
 {
   st_system_tablename *systab;
 
@@ -291,15 +310,28 @@ static bool spartan_is_supported_system_table(const char *db,
 
   @see
   handler::ha_open() in handler.cc
-*/
+  */
 
 int ha_spartan::open(const char *name, int mode, uint test_if_locked)
 {
   DBUG_ENTER("ha_spartan::open");
 
-  if (!(share = get_share()))
-    DBUG_RETURN(1);
-  thr_lock_data_init(&share->lock,&lock,NULL);
+  if (!(share = get_share(name, table)))
+    DBUG_RETURN(HA_ERR_OUT_OF_MEM);
+
+  if ((data_file= mysql_file_open(spd_file_data, share->data_file_name, O_RDWR, MYF(MY_WME))) == -1)
+  {
+    DBUG_RETURN(my_errno ? my_errno : -1);
+  }
+
+  thr_lock_data_init(&share->lock,&lock, (void *)this);
+  io_size = table->s->reclength;
+  io_buf = (uchar *)malloc(io_size);
+  if (io_buf == NULL) {
+    io_size = 0;
+    mysql_file_close(data_file, MYF(MY_WME));
+    DBUG_RETURN(HA_ERR_OUT_OF_MEM);
+  }
 
   DBUG_RETURN(0);
 }
@@ -318,12 +350,18 @@ int ha_spartan::open(const char *name, int mode, uint test_if_locked)
 
   @see
   sql_base.cc, sql_select.cc and table.cc
-*/
+  */
 
 int ha_spartan::close(void)
 {
+  int rc = 0;
   DBUG_ENTER("ha_spartan::close");
-  DBUG_RETURN(0);
+  if (io_buf) {
+    free(io_buf);
+  }
+  rc= mysql_file_close(data_file, MYF(0));
+  data_file = -1;
+  DBUG_RETURN(rc);
 }
 
 
@@ -338,7 +376,7 @@ int ha_spartan::close(void)
   @code
   for (Field **field=table->field ; *field ; field++)
   {
-    ...
+  ...
   }
   @endcode
 
@@ -355,17 +393,24 @@ int ha_spartan::close(void)
   @see
   item_sum.cc, item_sum.cc, sql_acl.cc, sql_insert.cc,
   sql_insert.cc, sql_select.cc, sql_table.cc, sql_udf.cc and sql_update.cc
-*/
+  */
 
 int ha_spartan::write_row(uchar *buf)
 {
   DBUG_ENTER("ha_spartan::write_row");
-  /*
-    Spartan of a successful write_row. We don't store the data
-    anywhere; they are thrown away. A real implementation will
-    probably need to do something with 'buf'. We report a success
-    here, to pretend that the insert was successful.
-  */
+
+  if (encode_buf(buf)) {
+    return HA_ERR_UNSUPPORTED;
+  }
+
+  if (fcntl(data_file, F_SETFL, O_APPEND)) {
+    DBUG_RETURN(HA_ERR_INTERNAL_ERROR);
+  }
+
+   /* use pwrite, as concurrent reader could have changed the position */
+  if (mysql_file_write(data_file, (uchar*)buffer.ptr(), buffer.length(), MYF(MY_WME | MY_NABP)))
+    DBUG_RETURN(HA_ERR_INTERNAL_ERROR);
+
   DBUG_RETURN(0);
 }
 
@@ -384,7 +429,7 @@ int ha_spartan::write_row(uchar *buf)
   @code
 
   if (table->next_number_field && record == table->record[0])
-    update_auto_increment();
+  update_auto_increment();
 
   @endcode
 
@@ -392,12 +437,23 @@ int ha_spartan::write_row(uchar *buf)
 
   @see
   sql_select.cc, sql_acl.cc, sql_update.cc and sql_insert.cc
-*/
+  */
 int ha_spartan::update_row(const uchar *old_data, uchar *new_data)
 {
 
   DBUG_ENTER("ha_spartan::update_row");
-  DBUG_RETURN(HA_ERR_WRONG_COMMAND);
+
+  if (encode_buf(new_data)) {
+    return HA_ERR_UNSUPPORTED;
+  }
+  fcntl(data_file, F_SETFL, O_RDWR);
+
+  lseek(data_file, current_position, SEEK_SET);
+   /* use pwrite, as concurrent reader could have changed the position */
+  if (mysql_file_write(data_file, (uchar*)buffer.ptr(), buffer.length(), MYF(MY_WME | MY_NABP)))
+    DBUG_RETURN(HA_ERR_INTERNAL_ERROR);
+
+  DBUG_RETURN(0);
 }
 
 
@@ -419,12 +475,37 @@ int ha_spartan::update_row(const uchar *old_data, uchar *new_data)
 
   @see
   sql_acl.cc, sql_udf.cc, sql_delete.cc, sql_insert.cc and sql_select.cc
-*/
+  */
 
 int ha_spartan::delete_row(const uchar *buf)
 {
+
+  int len = 0;
+  my_off_t old_cur = current_position;
   DBUG_ENTER("ha_spartan::delete_row");
-  DBUG_RETURN(HA_ERR_WRONG_COMMAND);
+
+  fcntl(data_file, F_SETFL, O_RDWR);
+
+  //read from next_position to eof
+  while ((len = read_one_record()) > 0) {
+    lseek(data_file, current_position, SEEK_SET); 
+    if (mysql_file_write(data_file, (uchar*)io_buf, len, MYF(MY_WME | MY_NABP)))
+      DBUG_RETURN(HA_ERR_INTERNAL_ERROR);
+
+    DBUG_ASSERT(next_position - current_position == len);
+    current_position += len;
+    next_position += len;
+    lseek(data_file, current_position+len, SEEK_SET); 
+  }
+
+
+  if (ftruncate(data_file, current_position)) {
+    DBUG_RETURN(HA_ERR_INTERNAL_ERROR);
+  }
+
+  current_position = next_position = old_cur;
+  lseek(data_file, current_position, SEEK_SET);
+  DBUG_RETURN(0);
 }
 
 
@@ -433,12 +514,12 @@ int ha_spartan::delete_row(const uchar *buf)
   Positions an index cursor to the index specified in the handle. Fetches the
   row if available. If the key value is null, begin at the first key of the
   index.
-*/
+  */
 
 int ha_spartan::index_read_map(uchar *buf, const uchar *key,
-                               key_part_map keypart_map __attribute__((unused)),
-                               enum ha_rkey_function find_flag
-                               __attribute__((unused)))
+    key_part_map keypart_map __attribute__((unused)),
+    enum ha_rkey_function find_flag
+    __attribute__((unused)))
 {
   int rc;
   DBUG_ENTER("ha_spartan::index_read");
@@ -452,7 +533,7 @@ int ha_spartan::index_read_map(uchar *buf, const uchar *key,
 /**
   @brief
   Used to read forward through the index.
-*/
+  */
 
 int ha_spartan::index_next(uchar *buf)
 {
@@ -468,7 +549,7 @@ int ha_spartan::index_next(uchar *buf)
 /**
   @brief
   Used to read backwards through the index.
-*/
+  */
 
 int ha_spartan::index_prev(uchar *buf)
 {
@@ -490,7 +571,7 @@ int ha_spartan::index_prev(uchar *buf)
 
   @see
   opt_range.cc, opt_sum.cc, sql_handler.cc and sql_select.cc
-*/
+  */
 int ha_spartan::index_first(uchar *buf)
 {
   int rc;
@@ -511,7 +592,7 @@ int ha_spartan::index_first(uchar *buf)
 
   @see
   opt_range.cc, opt_sum.cc, sql_handler.cc and sql_select.cc
-*/
+  */
 int ha_spartan::index_last(uchar *buf)
 {
   int rc;
@@ -535,16 +616,20 @@ int ha_spartan::index_last(uchar *buf)
 
   @see
   filesort.cc, records.cc, sql_handler.cc, sql_select.cc, sql_table.cc and sql_update.cc
-*/
+  */
 int ha_spartan::rnd_init(bool scan)
 {
   DBUG_ENTER("ha_spartan::rnd_init");
+  current_position= next_position= 0;
+  fcntl(data_file, F_SETFL, O_RDONLY);
+  lseek(data_file, 0, SEEK_SET);
   DBUG_RETURN(0);
 }
 
 int ha_spartan::rnd_end()
 {
   DBUG_ENTER("ha_spartan::rnd_end");
+  free_root(&blobroot, MYF(0));
   DBUG_RETURN(0);
 }
 
@@ -562,14 +647,22 @@ int ha_spartan::rnd_end()
 
   @see
   filesort.cc, records.cc, sql_handler.cc, sql_select.cc, sql_table.cc and sql_update.cc
-*/
+  */
 int ha_spartan::rnd_next(uchar *buf)
 {
   int rc;
   DBUG_ENTER("ha_spartan::rnd_next");
-  MYSQL_READ_ROW_START(table_share->db.str, table_share->table_name.str,
-                       TRUE);
-  rc= HA_ERR_END_OF_FILE;
+  MYSQL_READ_ROW_START(table_share->db.str, table_share->table_name.str, TRUE);
+
+  current_position= next_position;
+  rc = find_current_row(buf);
+  next_position = lseek(data_file, 0, SEEK_CUR);
+
+  if (rc) {
+    goto end;
+  }
+
+end:
   MYSQL_READ_ROW_DONE(rc);
   DBUG_RETURN(rc);
 }
@@ -595,10 +688,11 @@ int ha_spartan::rnd_next(uchar *buf)
 
   @see
   filesort.cc, sql_select.cc, sql_delete.cc and sql_update.cc
-*/
+  */
 void ha_spartan::position(const uchar *record)
 {
   DBUG_ENTER("ha_spartan::position");
+  my_store_ptr(ref, ref_length, current_position);
   DBUG_VOID_RETURN;
 }
 
@@ -615,14 +709,14 @@ void ha_spartan::position(const uchar *record)
 
   @see
   filesort.cc, records.cc, sql_insert.cc, sql_select.cc and sql_update.cc
-*/
+  */
 int ha_spartan::rnd_pos(uchar *buf, uchar *pos)
 {
   int rc;
   DBUG_ENTER("ha_spartan::rnd_pos");
-  MYSQL_READ_ROW_START(table_share->db.str, table_share->table_name.str,
-                       TRUE);
-  rc= HA_ERR_WRONG_COMMAND;
+  MYSQL_READ_ROW_START(table_share->db.str, table_share->table_name.str, FALSE);
+  current_position= my_get_ptr(pos,ref_length);
+  rc= find_current_row(buf);
   MYSQL_READ_ROW_DONE(rc);
   DBUG_RETURN(rc);
 }
@@ -640,19 +734,19 @@ int ha_spartan::rnd_pos(uchar *buf, uchar *pos)
   You will probably want to have the following in your code:
   @code
   if (records < 2)
-    records = 2;
+  records = 2;
   @endcode
   The reason is that the server will optimize for cases of only a single
   record. If, in a table scan, you don't know the number of records, it
   will probably be better to set records to two so you can return as many
   records as you need. Along with records, a few more variables you may wish
   to set are:
-    records
-    deleted
-    data_file_length
-    index_file_length
-    delete_length
-    check_time
+  records
+  deleted
+  data_file_length
+  index_file_length
+  delete_length
+  check_time
   Take a look at the public variables in handler.h for more information.
 
   Called in filesort.cc, ha_heap.cc, item_sum.cc, opt_sum.cc, sql_delete.cc,
@@ -665,7 +759,7 @@ int ha_spartan::rnd_pos(uchar *buf, uchar *pos)
   sql_derived.cc, sql_select.cc, sql_select.cc, sql_select.cc, sql_select.cc,
   sql_select.cc, sql_show.cc, sql_show.cc, sql_show.cc, sql_show.cc, sql_table.cc,
   sql_union.cc and sql_update.cc
-*/
+  */
 int ha_spartan::info(uint flag)
 {
   DBUG_ENTER("ha_spartan::info");
@@ -679,9 +773,9 @@ int ha_spartan::info(uint flag)
   the storage engine. The myisam engine implements the most hints.
   ha_innodb.cc has the most exhaustive list of these hints.
 
-    @see
+  @see
   ha_innodb.cc
-*/
+  */
 int ha_spartan::extra(enum ha_extra_function operation)
 {
   DBUG_ENTER("ha_spartan::extra");
@@ -707,7 +801,7 @@ int ha_spartan::extra(enum ha_extra_function operation)
   mysql_delete() in sql_delete.cc;
   JOIN::reinit() in sql_select.cc and
   st_select_lex_unit::exec() in sql_union.cc.
-*/
+  */
 int ha_spartan::delete_all_rows()
 {
   DBUG_ENTER("ha_spartan::delete_all_rows");
@@ -730,7 +824,7 @@ int ha_spartan::delete_all_rows()
   @see
   Truncate_statement in sql_truncate.cc
   Remarks in handler::truncate.
-*/
+  */
 int ha_spartan::truncate()
 {
   DBUG_ENTER("ha_spartan::truncate");
@@ -754,7 +848,7 @@ int ha_spartan::truncate()
   lock.cc by lock_external() and unlock_external() in lock.cc;
   the section "locking functions for mysql" in lock.cc;
   copy_data_between_tables() in sql_table.cc.
-*/
+  */
 int ha_spartan::external_lock(THD *thd, int lock_type)
 {
   DBUG_ENTER("ha_spartan::external_lock");
@@ -798,10 +892,10 @@ int ha_spartan::external_lock(THD *thd, int lock_type)
 
   @see
   get_lock_data() in lock.cc
-*/
+  */
 THR_LOCK_DATA **ha_spartan::store_lock(THD *thd,
-                                       THR_LOCK_DATA **to,
-                                       enum thr_lock_type lock_type)
+    THR_LOCK_DATA **to,
+    enum thr_lock_type lock_type)
 {
   if (lock_type != TL_IGNORE && lock.type == TL_UNLOCK)
     lock.type=lock_type;
@@ -828,7 +922,7 @@ THR_LOCK_DATA **ha_spartan::store_lock(THD *thd,
 
   @see
   delete_table and ha_create_table() in handler.cc
-*/
+  */
 int ha_spartan::delete_table(const char *name)
 {
   DBUG_ENTER("ha_spartan::delete_table");
@@ -850,7 +944,7 @@ int ha_spartan::delete_table(const char *name)
 
   @see
   mysql_rename_table() in sql_table.cc
-*/
+  */
 int ha_spartan::rename_table(const char * from, const char * to)
 {
   DBUG_ENTER("ha_spartan::rename_table ");
@@ -870,9 +964,9 @@ int ha_spartan::rename_table(const char * from, const char * to)
 
   @see
   check_quick_keys() in opt_range.cc
-*/
+  */
 ha_rows ha_spartan::records_in_range(uint inx, key_range *min_key,
-                                     key_range *max_key)
+    key_range *max_key)
 {
   DBUG_ENTER("ha_spartan::records_in_range");
   DBUG_RETURN(10);                         // low number to force index usage
@@ -896,19 +990,228 @@ ha_rows ha_spartan::records_in_range(uint inx, key_range *min_key,
 
   @see
   ha_create_table() in handle.cc
-*/
+  */
 
 int ha_spartan::create(const char *name, TABLE *table_arg,
-                       HA_CREATE_INFO *create_info)
+    HA_CREATE_INFO *create_info)
 {
+  File create_file;
+  char name_buff[FN_REFLEN];
+
   DBUG_ENTER("ha_spartan::create");
+
   /*
-    This is not implemented but we want someone to be able to see that it
-    works.
-  */
+     check columns
+     */
+  for (Field **field= table_arg->s->field; *field; field++)
+  {
+    if ((*field)->real_maybe_null())
+    {
+      my_error(ER_CHECK_NOT_IMPLEMENTED, MYF(0), "nullable columns");
+      DBUG_RETURN(HA_ERR_UNSUPPORTED);
+    }
+  }
+
+  if ((create_file= mysql_file_create(spd_file_data, fn_format(name_buff, name, "", SPD_EXT, MY_REPLACE_EXT|MY_UNPACK_FILENAME), 0, O_RDWR | O_TRUNC, MYF(MY_WME))) < 0)
+    DBUG_RETURN(-1);
+
+  mysql_file_close(create_file, MYF(0));
   DBUG_RETURN(0);
 }
 
+
+/**
+ * read one record to io_buf
+ * return >0: Successfully
+ * return =0: Read EOF
+ * return <0: Error
+ */
+int ha_spartan::read_one_record() {
+
+  int cur_len = 0;
+  unsigned long total_len = 0;
+  while (total_len < io_size && (cur_len = my_read(data_file, io_buf + total_len, io_size - total_len, 0)) > 0) {
+    total_len += cur_len;
+  }
+
+  DBUG_ASSERT(total_len <= io_size);
+
+  if (total_len == io_size) {
+    return total_len;
+  } else if (cur_len == 0) {
+    return 0;
+  } else {
+    return -1;
+  }
+}
+
+int ha_spartan::encode_buf(uchar *buf) {
+
+  size_t i = 0;
+  uint tmp_int;
+  ulonglong tmp_long;
+  char attribute_buffer[1024];
+  String attribute(attribute_buffer, sizeof(attribute_buffer),
+      &my_charset_bin);
+
+  buffer.length(0);
+  my_bitmap_map *org_bitmap= dbug_tmp_use_all_columns(table, table->read_set);
+
+  for (Field **field=table->field ; *field ; field++)
+  {
+    const bool was_null= (*field)->is_null();
+
+    /**
+     * assistance for backwards compatibility in production builds.  note: this will not work for ENUM columns.
+     */
+    if (was_null)
+    {
+      (*field)->set_default();
+      (*field)->set_notnull();
+    }
+
+    switch ((*field)->real_type()) {
+      case MYSQL_TYPE_LONG:
+      case MYSQL_TYPE_FLOAT:
+      case MYSQL_TYPE_TIMESTAMP:
+        buffer.append("    ");
+        buffer.length(buffer.length()-4);
+        tmp_int = (*field)->val_int();
+        buffer.qs_append((char*)&tmp_int, 4);
+        break;
+      case MYSQL_TYPE_LONGLONG:
+      case MYSQL_TYPE_DOUBLE:
+      case MYSQL_TYPE_DATETIME:
+        buffer.append("        ");
+        buffer.length(buffer.length()-8);
+        tmp_long = (*field)->val_int();
+        buffer.qs_append((char *)&tmp_long, 8);
+        break;
+      case MYSQL_TYPE_VARCHAR:
+      case MYSQL_TYPE_TINY_BLOB:
+      case MYSQL_TYPE_MEDIUM_BLOB:
+      case MYSQL_TYPE_LONG_BLOB:
+      case MYSQL_TYPE_BLOB:
+      case MYSQL_TYPE_VAR_STRING:
+      case MYSQL_TYPE_STRING:
+        (*field)->val_str(&attribute,&attribute);
+        buffer.append(attribute);
+        i = attribute.length();
+        while (i++ < (*field)->pack_length()) {
+          buffer.append(' ');
+        }
+        break;
+      default :
+        goto end;
+    }
+
+    if (was_null)
+      (*field)->set_null();
+  }
+
+  i = buffer.length();
+  while (i++ < table->s->reclength) {
+    buffer.append(' ');
+  }
+
+end:
+  dbug_tmp_restore_column_map(table->read_set, org_bitmap);
+  return 0;
+}
+
+int ha_spartan::find_current_row(uchar *buf) {
+
+  my_off_t curr_offset = 0;
+  my_bitmap_map *org_bitmap;
+  int error, ret;
+  bool read_all;
+  DBUG_ENTER("ha_tina::find_current_row");
+
+  free_root(&blobroot, MYF(0));
+
+  /*
+     We do not read further then local_saved_data_file_length in order
+     not to conflict with undergoing concurrent insert.
+     */
+  ret = read_one_record();
+  if (ret == 0) {
+    DBUG_RETURN(HA_ERR_END_OF_FILE);
+  } else if (ret < (long)io_size) {
+    DBUG_RETURN(HA_ERR_INTERNAL_ERROR);
+  }
+
+  /* We must read all columns in case a table is opened for update */
+  read_all= !bitmap_is_clear_all(table->write_set);
+  /* Avoid asserts in ::store() for columns that are not going to be updated */
+  org_bitmap= dbug_tmp_use_all_columns(table, table->write_set);
+  error= HA_ERR_CRASHED_ON_USAGE;
+
+  memset(buf, 0, table->s->null_bytes);
+
+
+  for (Field **field=table->field ; *field ; field++)
+  {
+
+    buffer.length(0);
+    if (curr_offset >= io_size)
+      goto err;
+
+    if (read_all || bitmap_is_set(table->read_set, (*field)->field_index)) {
+
+      switch ((*field)->real_type()) {
+        case MYSQL_TYPE_LONG:
+        case MYSQL_TYPE_FLOAT:
+        case MYSQL_TYPE_TIMESTAMP:
+          if ((*field)->store(uint4korr(io_buf+curr_offset))) {
+            goto err;
+          }
+          break;
+        case MYSQL_TYPE_LONGLONG:
+        case MYSQL_TYPE_DOUBLE:
+        case MYSQL_TYPE_DATETIME:
+          if ((*field)->store(uint8korr(io_buf+curr_offset))) {
+            goto err;
+          }
+          break;
+        case MYSQL_TYPE_VARCHAR:
+        case MYSQL_TYPE_TINY_BLOB:
+        case MYSQL_TYPE_MEDIUM_BLOB:
+        case MYSQL_TYPE_LONG_BLOB:
+        case MYSQL_TYPE_BLOB:
+        case MYSQL_TYPE_VAR_STRING:
+        case MYSQL_TYPE_STRING:
+          if ((*field)->store((const char *)(io_buf+curr_offset), (*field)->pack_length(), buffer.charset(), CHECK_FIELD_WARN))
+            goto err;
+          if ((*field)->flags & BLOB_FLAG)
+          {
+            Field_blob *blob= *(Field_blob**) field;
+            uchar *src, *tgt;
+            uint length, packlength;
+
+            packlength= blob->pack_length_no_ptr();
+            length= blob->get_length(blob->ptr);
+            memcpy(&src, blob->ptr + packlength, sizeof(char*));
+            if (src)
+            {
+              tgt= (uchar*) alloc_root(&blobroot, length);
+              bmove(tgt, src, length);
+              memcpy(blob->ptr + packlength, &tgt, sizeof(char*));
+            }
+          }
+          break;
+        default :
+          goto err;
+      }
+    }
+    curr_offset += (*field)->pack_length();
+  }
+  error= 0;
+
+err:
+  dbug_tmp_restore_column_map(table->write_set, org_bitmap);
+
+  DBUG_RETURN(error);
+}
 
 struct st_mysql_storage_engine spartan_storage_engine=
 { MYSQL_HANDLERTON_INTERFACE_VERSION };
@@ -929,49 +1232,49 @@ TYPELIB enum_var_typelib=
 };
 
 static MYSQL_SYSVAR_ENUM(
-  enum_var,                       // name
-  srv_enum_var,                   // varname
-  PLUGIN_VAR_RQCMDARG,            // opt
-  "Sample ENUM system variable.", // comment
-  NULL,                           // check
-  NULL,                           // update
-  0,                              // def
-  &enum_var_typelib);             // typelib
+    enum_var,                       // name
+    srv_enum_var,                   // varname
+    PLUGIN_VAR_RQCMDARG,            // opt
+    "Sample ENUM system variable.", // comment
+    NULL,                           // check
+    NULL,                           // update
+    0,                              // def
+    &enum_var_typelib);             // typelib
 
 static MYSQL_SYSVAR_ULONG(
-  ulong_var,
-  srv_ulong_var,
-  PLUGIN_VAR_RQCMDARG,
-  "0..1000",
-  NULL,
-  NULL,
-  8,
-  0,
-  1000,
-  0);
+    ulong_var,
+    srv_ulong_var,
+    PLUGIN_VAR_RQCMDARG,
+    "0..1000",
+    NULL,
+    NULL,
+    8,
+    0,
+    1000,
+    0);
 
 static MYSQL_SYSVAR_DOUBLE(
-  double_var,
-  srv_double_var,
-  PLUGIN_VAR_RQCMDARG,
-  "0.500000..1000.500000",
-  NULL,
-  NULL,
-  8.5,
-  0.5,
-  1000.5,
-  0);                             // reserved always 0
+    double_var,
+    srv_double_var,
+    PLUGIN_VAR_RQCMDARG,
+    "0.500000..1000.500000",
+    NULL,
+    NULL,
+    8.5,
+    0.5,
+    1000.5,
+    0);                             // reserved always 0
 
 static MYSQL_THDVAR_DOUBLE(
-  double_thdvar,
-  PLUGIN_VAR_RQCMDARG,
-  "0.500000..1000.500000",
-  NULL,
-  NULL,
-  8.5,
-  0.5,
-  1000.5,
-  0);
+    double_thdvar,
+    PLUGIN_VAR_RQCMDARG,
+    "0.500000..1000.500000",
+    NULL,
+    NULL,
+    8.5,
+    0.5,
+    1000.5,
+    0);
 
 static struct st_mysql_sys_var* spartan_system_variables[]= {
   MYSQL_SYSVAR(enum_var),
@@ -983,14 +1286,14 @@ static struct st_mysql_sys_var* spartan_system_variables[]= {
 
 // this is an spartan of SHOW_FUNC and of my_snprintf() service
 static int show_func_spartan(MYSQL_THD thd, struct st_mysql_show_var *var,
-                             char *buf)
+    char *buf)
 {
   var->type= SHOW_CHAR;
   var->value= buf; // it's of SHOW_VAR_FUNC_BUFF_SIZE bytes
   my_snprintf(buf, SHOW_VAR_FUNC_BUFF_SIZE,
-              "enum_var is %lu, ulong_var is %lu, "
-              "double_var is %f, %.6b", // %b is a MySQL extension
-              srv_enum_var, srv_ulong_var, srv_double_var, "really");
+      "enum_var is %lu, ulong_var is %lu, "
+      "double_var is %f, %.6b", // %b is a MySQL extension
+      srv_enum_var, srv_ulong_var, srv_double_var, "really");
   return 0;
 }
 
@@ -1003,17 +1306,17 @@ static struct st_mysql_show_var func_status[]=
 mysql_declare_plugin(spartan)
 {
   MYSQL_STORAGE_ENGINE_PLUGIN,
-  &spartan_storage_engine,
-  "SPARTAN",
-  "Brian Aker, MySQL AB",
-  "Spartan storage engine",
-  PLUGIN_LICENSE_GPL,
-  spartan_init_func,                            /* Plugin Init */
-  NULL,                                         /* Plugin Deinit */
-  0x0001 /* 0.1 */,
-  func_status,                                  /* status variables */
-  spartan_system_variables,                     /* system variables */
-  NULL,                                         /* config options */
-  0,                                            /* flags */
+    &spartan_storage_engine,
+    "SPARTAN",
+    "Brian Aker, MySQL AB",
+    "Spartan storage engine",
+    PLUGIN_LICENSE_GPL,
+    spartan_init_func,                            /* Plugin Init */
+    NULL,                                         /* Plugin Deinit */
+    0x0001 /* 0.1 */,
+    func_status,                                  /* status variables */
+    spartan_system_variables,                     /* system variables */
+    NULL,                                         /* config options */
+    0,                                            /* flags */
 }
 mysql_declare_plugin_end;

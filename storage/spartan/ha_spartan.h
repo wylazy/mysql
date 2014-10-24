@@ -42,6 +42,9 @@
 */
 class Spartan_share : public Handler_share {
 public:
+  char table_name[FN_REFLEN];
+  char data_file_name[FN_REFLEN];
+
   mysql_mutex_t mutex;
   THR_LOCK lock;
   Spartan_share();
@@ -59,8 +62,19 @@ class ha_spartan: public handler
 {
   THR_LOCK_DATA lock;      ///< MySQL lock
   Spartan_share *share;    ///< Shared lock info
-  Spartan_share *get_share(); ///< Get the share
 
+  my_off_t current_position;  /* Current position in the file during a file scan */
+  my_off_t next_position;     /* Next position in the file scan */
+
+  uchar * io_buf;
+  unsigned long io_size;
+
+  File data_file;                   /* File handler for readers */
+  String buffer;
+
+  MEM_ROOT blobroot;
+
+  Spartan_share *get_share(const char *table_name, TABLE *table); ///< Get the share
 public:
   ha_spartan(handlerton *hton, TABLE_SHARE *table_arg);
   ~ha_spartan()
@@ -89,12 +103,8 @@ public:
   */
   ulonglong table_flags() const
   {
-    /*
-      We are saying that this engine is just statement capable to have
-      an engine that can only handle statement-based logging. This is
-      used in testing.
-    */
-    return HA_BINLOG_STMT_CAPABLE;
+    return (HA_NO_TRANSACTIONS | HA_REC_NOT_IN_SEQ | HA_NO_AUTO_INCREMENT |
+            HA_BINLOG_ROW_CAPABLE | HA_BINLOG_STMT_CAPABLE);
   }
 
   /** @brief
@@ -257,4 +267,9 @@ public:
 
   THR_LOCK_DATA **store_lock(THD *thd, THR_LOCK_DATA **to,
                              enum thr_lock_type lock_type);     ///< required
+
+  /* The following methods were added just for Spartan */
+  int read_one_record();
+  int encode_buf(uchar *buf);
+  int find_current_row(uchar *buf);
 };
