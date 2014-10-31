@@ -325,9 +325,6 @@ INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/include
   ${SSL_INCLUDE_DIRS}
   ${ZLIB_INCLUDE_DIR})
 
-SET(UT_SOURCES ut.cc lib.cc)
-
-
 SET(INNOBASE_SOURCES
   ${CMAKE_SOURCE_DIR}/learn/innobase/api/api0api.cc
   ${CMAKE_SOURCE_DIR}/learn/innobase/api/api0misc.cc
@@ -441,6 +438,7 @@ SET(INNOBASE_SOURCES
   ${CMAKE_SOURCE_DIR}/learn/innobase/ut/ut0ut.cc
   ${CMAKE_SOURCE_DIR}/learn/innobase/ut/ut0vec.cc
   ${CMAKE_SOURCE_DIR}/learn/innobase/ut/ut0wqueue.cc
+  ${CMAKE_SOURCE_DIR}/learn/lib.cc
   )
 
 #SET(INNOBASE_SOURCES
@@ -454,6 +452,14 @@ SET(INNOBASE_SOURCES
 #	${CMAKE_SOURCE_DIR}/learn/innobase/os/os0sync.cc
 #  )
 
-MYSQL_ADD_EXECUTABLE(ut ${UT_SOURCES} ${INNOBASE_SOURCES})
-TARGET_LINK_LIBRARIES(ut mysys mysys_ssl strings dbug)
-#TARGET_LINK_LIBRARIES(hash dbug)
+SET(UT_SOURCES ut.cc)
+SET(HASH_SOURCES hash.cc)
+
+
+ADD_CONVENIENCE_LIBRARY(innodb_lib ${INNOBASE_SOURCES})
+
+MYSQL_ADD_EXECUTABLE(ut ${UT_SOURCES})
+MYSQL_ADD_EXECUTABLE(hash ${HASH_SOURCES})
+
+TARGET_LINK_LIBRARIES(ut mysys innodb_lib strings)
+TARGET_LINK_LIBRARIES(hash mysys innodb_lib strings)
