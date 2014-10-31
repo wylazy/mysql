@@ -23,3 +23,7 @@ mysql
 <li>不支持事务</li>
 </ol>
 
+<h3>InnoDB 学习</h3>
+在项目根目录下有一个/learn目录，里面存放了可独立编译的InnoDB的源码库，可用于学习和测试InnoDB的数据结构和代码。<br />
+/learn/ut.cc 测试内存分配<br />
+/learn/hash.cc 测试InnoDB的Hash表实现<br />
