@@ -23,7 +23,7 @@ void * func(void * arg) {
 int main() {
 
   int i = 0, n = 1000000;
-  int n_threads = 8;
+  int n_threads = 4;
   srv_max_n_threads = n_threads;
 
   pthread_t ts[n_threads];
@@ -37,7 +37,6 @@ int main() {
   mutex_create(n, &mutex_list_mutex, SYNC_NO_ORDER_CHECK);
 
   mutex_create(n, &g_mutex, SYNC_NO_ORDER_CHECK);
-
 
   for (i = 0; i< n_threads; i++) {
     if (pthread_create(&ts[i], NULL, func, &n)) {

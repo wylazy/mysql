@@ -21,14 +21,13 @@ void * func(void * arg) {
 int main() {
 
   int i = 0, n = 1000000;
-  int n_threads = 8;
+  int n_threads = 4;
   srv_max_n_threads = n_threads;
 
   pthread_t ts[n_threads];
 
   os_sync_init();
   g_mutex = os_mutex_create();
-
 
   for (i = 0; i< n_threads; i++) {
     if (pthread_create(&ts[i], NULL, func, &n)) {
