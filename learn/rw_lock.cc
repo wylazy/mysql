@@ -2,23 +2,36 @@
 #include <pthread.h>
 #include <os0sync.h>
 #include <sync0sync.h>
+#include <sync0rw.h>
 
 //sync_init will use srv_max_n_threads for init
 extern unsigned long srv_max_n_threads;
 unsigned long long count = 0;
 
-ib_mutex_t g_mutex;
+rw_lock_t  g_rw_lock;
+
+unsigned long long getCount() {
+
+  unsigned long long tmp = 0;
+  rw_lock_s_lock(&g_rw_lock);  
+  tmp = count;
+  rw_lock_s_unlock(&g_rw_lock);
+
+  return tmp;
+}
+
+void addCount(int d) {
+  rw_lock_x_lock(&g_rw_lock);  
+  count += d;
+  rw_lock_x_unlock(&g_rw_lock);
+}
 
 void * func(void * arg) {
   int i = 0;
   int n = *(int *)arg;
   for (i = 0; i < n; i++) {
-    mutex_enter(&g_mutex);
-    count = count+1;
-    mutex_exit(&g_mutex);
-    if (i %10 == 0) {
-      //sched_yield();
-    }
+    addCount(1);
+    //getCount(i);
   }
   return NULL;
 }
@@ -37,9 +50,9 @@ int main() {
 
   //mutex_create() will use mutex_list_mutex
   UT_LIST_INIT(mutex_list);
-  mutex_create(n, &mutex_list_mutex, SYNC_ANY_LATCH);
+  mutex_create(n, &mutex_list_mutex, SYNC_NO_ORDER_CHECK);
 
-  mutex_create(n, &g_mutex, SYNC_ANY_LATCH);
+  rw_lock_create(n, &g_rw_lock, SYNC_LEVEL_VARYING);
 
   for (i = 0; i< n_threads; i++) {
     if (pthread_create(&ts[i], NULL, func, &n)) {
@@ -54,6 +67,6 @@ int main() {
 
   printf("count = %llu\n", count);
 
-  mutex_free(&g_mutex);
+  rw_lock_free(&g_rw_lock);
   return 0;
 }

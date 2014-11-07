@@ -456,6 +456,7 @@ SET(UT_SOURCES ut.cc)
 SET(HASH_SOURCES hash.cc)
 SET(OS_MUTEX_SOURCES os_mutex.cc)
 SET(IB_MUTEX_SOURCES ib_mutex.cc)
+SET(RW_LOCK_SOURCES rw_lock.cc)
 
 
 ADD_CONVENIENCE_LIBRARY(innodb_lib ${INNOBASE_SOURCES})
@@ -464,8 +465,10 @@ MYSQL_ADD_EXECUTABLE(ut ${UT_SOURCES})
 MYSQL_ADD_EXECUTABLE(hash ${HASH_SOURCES})
 MYSQL_ADD_EXECUTABLE(os_mutex ${OS_MUTEX_SOURCES})
 MYSQL_ADD_EXECUTABLE(ib_mutex ${IB_MUTEX_SOURCES})
+MYSQL_ADD_EXECUTABLE(rw_lock ${RW_LOCK_SOURCES})
 
 TARGET_LINK_LIBRARIES(ut mysys innodb_lib strings)
 TARGET_LINK_LIBRARIES(hash mysys innodb_lib strings)
 TARGET_LINK_LIBRARIES(os_mutex mysys innodb_lib strings pthread)
 TARGET_LINK_LIBRARIES(ib_mutex mysys innodb_lib strings pthread)
+TARGET_LINK_LIBRARIES(rw_lock mysys innodb_lib strings pthread)
